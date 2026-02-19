@@ -196,6 +196,10 @@ with tab_run:
 
         current_step = 0
 
+        proc_env = os.environ.copy()
+        proc_env["PYTHONIOENCODING"] = "utf-8"
+        proc_env["PYTHONUTF8"] = "1"
+
         process = subprocess.Popen(
             cmd,
             stdout=PIPE,
@@ -204,6 +208,7 @@ with tab_run:
             cwd=str(BASE_DIR),
             encoding="utf-8",
             errors="replace",
+            env=proc_env,
         )
 
         for line in process.stdout:

@@ -16,6 +16,10 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# Force UTF-8 output on Windows (avoids UnicodeEncodeError with special chars in job titles)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 import pandas as pd
 from dotenv import load_dotenv
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright

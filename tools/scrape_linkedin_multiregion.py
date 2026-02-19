@@ -14,6 +14,10 @@ import re
 import sys
 import time
 from datetime import datetime
+
+# Force UTF-8 output on Windows (avoids UnicodeEncodeError with special chars in job titles)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 
 import pandas as pd
