@@ -3,6 +3,7 @@ LinkedIn Job Scraper — Web Interface
 Run with: streamlit run app.py
 """
 
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -21,6 +22,7 @@ OUTPUT_DIR = BASE_DIR / ".tmp"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 PYTHON = sys.executable
+IN_CLOUD = os.environ.get("RUNNING_IN_CLOUD") == "true"
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -111,8 +113,12 @@ with st.sidebar:
     st.subheader("Options")
     fetch_details = st.toggle("Fetch full descriptions", value=False,
                               help="Visits each job page — much slower but adds description text")
-    headless = st.toggle("Headless browser", value=False,
-                         help="Hide the browser window (faster but slightly more detectable)")
+    if IN_CLOUD:
+        headless = True
+        st.caption("🌐 Cloud mode: browser runs headless automatically.")
+    else:
+        headless = st.toggle("Headless browser", value=False,
+                             help="Hide the browser window (faster but slightly more detectable)")
 
     st.divider()
     run_btn = st.button("▶ Run Scraper", type="primary", use_container_width=True)
