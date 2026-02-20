@@ -98,12 +98,30 @@ def login(page) -> bool:
 # ── Scraping ──────────────────────────────────────────────────────────────────
 
 def dismiss_signin_modal(page):
-    """Close the 'Sign in to see more' modal if it appears."""
+    """Close any 'Sign in to see more' modal that blocks content."""
+    # Try multiple dismiss strategies in order
+    dismiss_selectors = [
+        "button.modal__dismiss",
+        "[aria-label='Dismiss']",
+        ".modal__dismiss",
+        "button[data-tracking-control-name='public_jobs_contextual-sign-in-modal_modal_dismiss']",
+        ".contextual-sign-in-modal button.dismiss",
+        "[data-test-modal-close-btn]",
+    ]
+    for sel in dismiss_selectors:
+        try:
+            btn = page.locator(sel)
+            if btn.count() > 0:
+                btn.first.click()
+                human_delay(0.4, 0.8)
+                return
+        except Exception:
+            continue
+
+    # Fallback: press Escape to close any open modal
     try:
-        close_btn = page.locator("button.modal__dismiss, [aria-label='Dismiss'], .modal__dismiss")
-        if close_btn.count() > 0:
-            close_btn.first.click()
-            human_delay(0.5, 1)
+        page.keyboard.press("Escape")
+        human_delay(0.3, 0.6)
     except Exception:
         pass
 
@@ -187,25 +205,61 @@ def fetch_job_details(page, job: dict) -> dict:
     try:
         page.goto(job["Job URL"], wait_until="domcontentloaded", timeout=15000)
         human_delay(1.5, 3)
+
+        # Dismiss any sign-in modal that blocks content
         dismiss_signin_modal(page)
 
-        try:
-            desc = page.locator(".description__text, .show-more-less-html__markup").first.inner_text(timeout=5000).strip()
-            job["Description"] = desc[:3000]  # cap at 3k chars
-        except Exception:
-            pass
+        # If redirected to login page, skip this job
+        if "/login" in page.url or "/authwall" in page.url:
+            print(f"    Auth wall — skipping detail fetch for this job.")
+            return job
 
-        try:
-            criteria = page.locator(".description__job-criteria-item").all()
-            for item in criteria:
-                label = item.locator("h3").first.inner_text(timeout=1000).strip().lower()
-                value = item.locator("span").first.inner_text(timeout=1000).strip()
-                if "seniority" in label:
-                    job["Seniority"] = value
-                elif "employment" in label:
-                    job["Employment Type"] = value
-        except Exception:
-            pass
+        # ── Description ───────────────────────────────────────────────
+        # Try multiple selectors — LinkedIn changes these periodically
+        desc_selectors = [
+            ".show-more-less-html__markup",
+            ".description__text--rich",
+            ".description__text",
+            "[class*='description'] .show-more-less-html__markup",
+            "section.description div",
+        ]
+        for sel in desc_selectors:
+            try:
+                el = page.locator(sel).first
+                if el.count() > 0:
+                    text = el.inner_text(timeout=3000).strip()
+                    if text:
+                        job["Description"] = text[:3000]
+                        break
+            except Exception:
+                continue
+
+        # ── Seniority & Employment Type ───────────────────────────────
+        # Try structured criteria list first
+        criteria_selectors = [
+            ".description__job-criteria-item",
+            ".job-criteria__item",
+            "li.description__job-criteria-item",
+        ]
+        for criteria_sel in criteria_selectors:
+            try:
+                criteria = page.locator(criteria_sel).all()
+                if not criteria:
+                    continue
+                for item in criteria:
+                    try:
+                        label = item.locator("h3, .description__job-criteria-subheader").first.inner_text(timeout=1000).strip().lower()
+                        value = item.locator("span, .description__job-criteria-text").first.inner_text(timeout=1000).strip()
+                        if "seniority" in label:
+                            job["Seniority"] = value
+                        elif "employment" in label:
+                            job["Employment Type"] = value
+                    except Exception:
+                        continue
+                if job["Seniority"] or job["Employment Type"]:
+                    break  # found what we need
+            except Exception:
+                continue
 
     except PlaywrightTimeoutError:
         print(f"    Timeout fetching: {job['Job URL']}")
