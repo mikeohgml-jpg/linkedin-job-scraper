@@ -335,7 +335,12 @@ def scrape(keyword: str, location: str, max_pages: int, headless: bool, fetch_de
                 for i, job in enumerate(jobs):
                     print(f"    [{i+1}/{len(jobs)}] {job['Job Title']} @ {job['Company']}")
                     jobs[i] = fetch_job_details(page, job)
-                    human_delay(1.5, 3)
+                    # Longer delay to avoid LinkedIn auth wall after a few visits
+                    human_delay(5, 12)
+                    # Extra pause every 5 jobs to further reduce detection
+                    if (i + 1) % 5 == 0:
+                        print(f"    Pausing to avoid rate limit...")
+                        human_delay(8, 15)
 
             all_jobs.extend(jobs)
             print(f"  Total collected: {len(all_jobs)}")

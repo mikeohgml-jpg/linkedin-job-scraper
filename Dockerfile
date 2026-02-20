@@ -30,11 +30,8 @@ EXPOSE 8501
 
 # Streamlit config: headless server, no CORS issues
 ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV RUNNING_IN_CLOUD=true
 
-CMD ["python", "-m", "streamlit", "run", "app.py", \
-     "--server.headless=true", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0"]
+# Use shell form so Railway's $PORT env var is expanded at runtime
+CMD python -m streamlit run app.py --server.headless=true --server.port=${PORT:-8501} --server.address=0.0.0.0
