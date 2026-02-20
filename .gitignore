@@ -2,6 +2,7 @@
 .env
 credentials.json
 token.json
+.streamlit/secrets.toml
 
 # Scraper output (regenerable)
 .tmp/

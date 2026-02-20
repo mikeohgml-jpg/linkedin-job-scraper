@@ -33,5 +33,8 @@ ENV STREAMLIT_SERVER_HEADLESS=true
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV RUNNING_IN_CLOUD=true
 
-# Use shell form so Railway's $PORT env var is expanded at runtime
-CMD python -m streamlit run app.py --server.headless=true --server.port=${PORT:-8501} --server.address=0.0.0.0
+# Copy entrypoint (generates secrets.toml from env vars, then starts Streamlit)
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+CMD ["/bin/bash", "entrypoint.sh"]

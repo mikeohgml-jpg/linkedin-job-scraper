@@ -33,12 +33,28 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Auth gate ──────────────────────────────────────────────────────────────────
+# Only enforce login when Google OAuth env vars are configured
+GOOGLE_AUTH_ENABLED = bool(os.environ.get("GOOGLE_CLIENT_ID"))
+
+if GOOGLE_AUTH_ENABLED:
+    if not st.user.is_logged_in:
+        st.title("🔍 LinkedIn Job Scraper")
+        st.info("Sign in with your Google account to continue.")
+        st.button("Sign in with Google", on_click=st.login, type="primary")
+        st.stop()
+
 st.title("🔍 LinkedIn Job Scraper")
 st.caption("Scrape LinkedIn job listings and export to Excel.")
 
 # ── Sidebar — Controls ────────────────────────────────────────────────────────
 
 with st.sidebar:
+    if GOOGLE_AUTH_ENABLED and st.user.is_logged_in:
+        st.caption(f"Signed in as **{st.user.email}**")
+        st.button("Sign out", on_click=st.logout)
+        st.divider()
+
     st.header("Search Settings")
 
     mode = st.radio(
