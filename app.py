@@ -283,6 +283,9 @@ with tab_results:
         try:
             file_bytes = out_file.read_bytes()
             df = pd.read_excel(io.BytesIO(file_bytes))
+            # Replace NaN with empty string for display (NaN appears in optional columns
+            # like Seniority, Employment Type, Description when fetch-details wasn't used)
+            df = df.fillna("")
         except PermissionError:
             st.error(
                 f"**Permission denied** — close `{out_file.name}` in Excel first, then refresh this page."

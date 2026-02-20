@@ -214,6 +214,7 @@ def save_to_excel(jobs: list[dict], keyword: str, region: str, target: int) -> P
         "Job Title", "Company", "Location", "Posted",
         "Job URL", "Search Region", "Seniority", "Employment Type",
     ])
+    df = df.fillna("")  # replace NaN with blank so Excel shows empty cells, not "NaN"
 
     with pd.ExcelWriter(filename, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Jobs")
