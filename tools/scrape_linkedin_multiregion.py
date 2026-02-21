@@ -260,7 +260,12 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=args.headless,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",   # prevents Chromium crash in Docker (limited /dev/shm)
+                "--disable-gpu",
+            ],
         )
         context = browser.new_context(
             user_agent=(

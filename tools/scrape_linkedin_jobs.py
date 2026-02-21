@@ -279,6 +279,8 @@ def scrape(keyword: str, location: str, max_pages: int, headless: bool, fetch_de
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
+                "--disable-dev-shm-usage",   # prevents Chromium crash in Docker (limited /dev/shm)
+                "--disable-gpu",
             ],
         )
         context = browser.new_context(
