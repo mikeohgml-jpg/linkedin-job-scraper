@@ -37,11 +37,23 @@ st.set_page_config(
 # Only enforce login when Google OAuth env vars are configured
 GOOGLE_AUTH_ENABLED = bool(os.environ.get("GOOGLE_CLIENT_ID"))
 
+# Allowlist: comma-separated emails in ALLOWED_EMAILS env var
+# e.g. ALLOWED_EMAILS=alice@gmail.com,bob@company.com
+# If not set, any authenticated Google account is allowed
+_raw_allowed = os.environ.get("ALLOWED_EMAILS", "")
+ALLOWED_EMAILS = {e.strip().lower() for e in _raw_allowed.split(",") if e.strip()}
+
 if GOOGLE_AUTH_ENABLED:
     if not st.user.is_logged_in:
         st.title("🔍 LinkedIn Job Scraper")
         st.info("Sign in with your Google account to continue.")
         st.button("Sign in with Google", on_click=st.login, type="primary")
+        st.stop()
+
+    # Check allowlist (only if one is configured)
+    if ALLOWED_EMAILS and st.user.email.lower() not in ALLOWED_EMAILS:
+        st.error(f"Access denied. **{st.user.email}** is not authorised to use this app.")
+        st.button("Sign out", on_click=st.logout)
         st.stop()
 
 st.title("🔍 LinkedIn Job Scraper")
