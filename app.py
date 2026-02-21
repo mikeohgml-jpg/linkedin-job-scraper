@@ -3,15 +3,15 @@ LinkedIn Job Scraper — Web Interface
 Run with: streamlit run app.py
 """
 
+import io
 import os
+import re
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
-from subprocess import PIPE, STDOUT
-
-import io
-import re
 
 import pandas as pd
 import streamlit as st
@@ -157,13 +157,88 @@ with st.sidebar:
     st.divider()
     run_btn = st.button("▶ Run Scraper", type="primary", use_container_width=True)
 
+# ── Background process helpers ────────────────────────────────────────────────
+
+LOG_FILE = OUTPUT_DIR / "current.log"
+PID_FILE = OUTPUT_DIR / "current.pid"
+
+
+def is_process_running(pid: int) -> bool:
+    """Check if a process is still alive by PID."""
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except Exception:
+        return False
+
+
+def launch_scraper(cmd: list[str]) -> int:
+    """Start scraper as a detached process; returns PID.
+    Uses start_new_session=True so it survives browser disconnects."""
+    proc_env = os.environ.copy()
+    proc_env.update({
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8":       "1",
+        "PYTHONUNBUFFERED": "1",
+    })
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG_FILE, "w", encoding="utf-8", errors="replace") as log_f:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,   # detach — survives browser disconnect
+            cwd=str(BASE_DIR),
+            env=proc_env,
+        )
+    PID_FILE.write_text(str(proc.pid))
+    return proc.pid
+
+
+def stop_scraper():
+    """Terminate the running scraper process."""
+    if PID_FILE.exists():
+        try:
+            pid = int(PID_FILE.read_text().strip())
+            os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+        PID_FILE.unlink(missing_ok=True)
+    st.session_state.is_scraping = False
+
+
+def read_log() -> str:
+    try:
+        return LOG_FILE.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def parse_progress(log_content: str, total_steps: int, scrape_mode: str):
+    """Return (progress_fraction, progress_text) by scanning the log."""
+    pct, text = 0.0, "Running..."
+    for line in log_content.splitlines():
+        m = re.search(r"Page\s+(\d+)/(\d+)", line)
+        if m:
+            cur, tot = int(m.group(1)), int(m.group(2))
+            pct = min(cur / tot, 1.0)
+            text = f"Scraping page {cur} of {tot}..."
+        m2 = re.search(r"Total:\s*(\d+)", line)
+        if m2 and scrape_mode != "Single Region":
+            cur = int(m2.group(1))
+            pct = min(cur / max(total_steps, 1), 1.0)
+            text = f"Collected {cur} / {total_steps} jobs..."
+    return pct, text
+
+
 # ── Build command ─────────────────────────────────────────────────────────────
 
 def build_command() -> list[str]:
-    # Resolve filter values
-    exp_codes     = ",".join(EXP_LEVEL_MAP[s] for s in exp_levels_sel)
+    exp_codes      = ",".join(EXP_LEVEL_MAP[s] for s in exp_levels_sel)
     industry_codes = ",".join(INDUSTRY_MAP[s] for s in industries_sel)
-    salary_code   = SALARY_MAP[salary_sel]
+    salary_code    = SALARY_MAP[salary_sel]
 
     if mode == "Single Region":
         cmd = [
@@ -182,15 +257,10 @@ def build_command() -> list[str]:
             "--regions", region,
         ]
 
-    if exp_codes:
-        cmd += ["--exp-levels", exp_codes]
-    if industry_codes:
-        cmd += ["--industries", industry_codes]
-    if salary_code:
-        cmd += ["--min-salary", salary_code]
-    if headless:
-        cmd.append("--headless")
-    # Route output to the user's private folder
+    if exp_codes:      cmd += ["--exp-levels",  exp_codes]
+    if industry_codes: cmd += ["--industries",   industry_codes]
+    if salary_code:    cmd += ["--min-salary",   salary_code]
+    if headless:       cmd.append("--headless")
     cmd += ["--output-dir", str(OUTPUT_DIR)]
     return cmd
 
@@ -200,6 +270,17 @@ def latest_output_file() -> Path | None:
     return files[0] if files else None
 
 
+# ── Session state init ────────────────────────────────────────────────────────
+
+if "is_scraping"   not in st.session_state: st.session_state.is_scraping   = False
+if "scrape_pid"    not in st.session_state: st.session_state.scrape_pid    = None
+if "total_steps"   not in st.session_state: st.session_state.total_steps   = 5
+if "scrape_mode_s" not in st.session_state: st.session_state.scrape_mode_s = "Single Region"
+
+# Reconcile: process may have finished between page loads
+if st.session_state.is_scraping and not is_process_running(st.session_state.scrape_pid):
+    st.session_state.is_scraping = False
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
 tab_run, tab_results, tab_history = st.tabs(["▶ Run", "📊 Results", "🗂 History"])
@@ -207,105 +288,65 @@ tab_run, tab_results, tab_history = st.tabs(["▶ Run", "📊 Results", "🗂 Hi
 # ── Tab 1: Run ────────────────────────────────────────────────────────────────
 
 with tab_run:
-    if not keyword.strip():
-        st.warning("Enter a keyword before running.")
-    elif run_btn:
-        cmd = build_command()
 
-        st.subheader("Progress")
-        st.code(" ".join(cmd), language="bash")
-
-        # Progress bar + status line sit above the log
-        progress_bar  = st.progress(0, text="Starting...")
-        status_line   = st.empty()
-        log_box       = st.empty()
-        status_box    = st.empty()
-        lines: list[str] = []
-
-        # Determine the progress denominator upfront
-        if mode == "Single Region":
-            total_steps = max_pages          # Page X / max_pages
-            progress_unit = "pages"
+    # ── Launch new scrape ──────────────────────────────────────────────────────
+    if run_btn and not st.session_state.is_scraping:
+        if not keyword.strip():
+            st.warning("Enter a keyword before running.")
         else:
-            total_steps = target             # Total: N / target
-            progress_unit = "jobs"
+            cmd = build_command()
+            st.session_state.scrape_pid    = launch_scraper(cmd)
+            st.session_state.is_scraping   = True
+            st.session_state.total_steps   = max_pages if mode == "Single Region" else int(target)
+            st.session_state.scrape_mode_s = mode
+            st.rerun()
 
-        current_step = 0
+    # ── Show progress while running ────────────────────────────────────────────
+    if st.session_state.is_scraping:
+        still_running = is_process_running(st.session_state.scrape_pid)
 
-        proc_env = os.environ.copy()
-        proc_env["PYTHONIOENCODING"] = "utf-8"
-        proc_env["PYTHONUTF8"] = "1"
-        proc_env["PYTHONUNBUFFERED"] = "1"  # flush stdout line-by-line through the pipe
+        st.subheader("Scraping in progress...")
+        if st.button("⏹ Stop", type="secondary"):
+            stop_scraper()
+            st.warning("Scrape stopped.")
+            st.rerun()
 
-        process = subprocess.Popen(
-            cmd,
-            stdout=PIPE,
-            stderr=STDOUT,
-            text=True,
-            bufsize=1,          # line-buffered read on our side
-            cwd=str(BASE_DIR),
-            encoding="utf-8",
-            errors="replace",
-            env=proc_env,
+        log_content = read_log()
+        pct, prog_text = parse_progress(
+            log_content,
+            st.session_state.total_steps,
+            st.session_state.scrape_mode_s,
         )
+        st.progress(pct, text=prog_text)
+        st.code(log_content[-4000:] if log_content else "Starting...", language=None)
 
-        for line in process.stdout:
-            lines.append(line)
-            log_box.code("".join(lines[-60:]))
-
-            # ── Parse progress from stdout ──────────────────────────────
-            # Single mode: "Page 2/5 — start=25"
-            m_page = re.search(r"Page\s+(\d+)/(\d+)", line)
-            if m_page:
-                current_step = int(m_page.group(1))
-                total_steps  = int(m_page.group(2))
-                pct = min(current_step / total_steps, 1.0)
-                progress_bar.progress(
-                    pct,
-                    text=f"Scraping page {current_step} of {total_steps}..."
-                )
-                status_line.caption(line.strip())
-                continue
-
-            # Multi mode: "+12 new unique jobs | Total: 34"
-            m_total = re.search(r"Total:\s*(\d+)", line)
-            if m_total:
-                current_step = int(m_total.group(1))
-                pct = min(current_step / total_steps, 1.0)
-                progress_bar.progress(
-                    pct,
-                    text=f"Collected {current_step} / {total_steps} jobs..."
-                )
-                status_line.caption(line.strip())
-                continue
-
-            # Country header: "--- Singapore (need 40 more) ---"
-            m_country = re.search(r"---\s*(.+?)\s*\(need", line)
-            if m_country:
-                status_line.caption(f"Searching: {m_country.group(1).strip()}")
-
-        process.wait()
-
-        if process.returncode == 0:
-            progress_bar.progress(1.0, text="Done!")
-            status_line.empty()
-            status_box.success("Scrape completed successfully!")
-            out_file = latest_output_file()
-            if out_file:
-                file_bytes = out_file.read_bytes()
-                st.info(f"Output: `{out_file.name}`")
-                st.download_button(
-                    label="⬇ Download Excel",
-                    data=file_bytes,
-                    file_name=out_file.name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary",
-                )
+        if still_running:
+            time.sleep(3)
+            st.rerun()
         else:
-            progress_bar.progress(1.0, text="Failed")
-            status_box.error("Scraper exited with errors. Check the log above.")
-    else:
+            # Process just finished
+            st.session_state.is_scraping = False
+            log_content = read_log()
+            if "Saved" in log_content or ".xlsx" in log_content:
+                st.progress(1.0, text="Done!")
+                st.success("Scrape completed! Results are in the **Results** tab.")
+                out_file = latest_output_file()
+                if out_file:
+                    st.download_button(
+                        label="⬇ Download Excel",
+                        data=out_file.read_bytes(),
+                        file_name=out_file.name,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                    )
+            else:
+                st.progress(1.0, text="Failed")
+                st.error("Scraper exited with errors. Check the log above.")
+
+    # ── Idle state ─────────────────────────────────────────────────────────────
+    elif not run_btn:
         st.info("Configure your search in the sidebar and click **Run Scraper**.")
+        st.caption("💡 The scraper runs on the server — closing your browser or letting your laptop sleep won't interrupt it.")
 
 # ── Tab 2: Results ────────────────────────────────────────────────────────────
 
@@ -317,17 +358,12 @@ with tab_results:
     else:
         st.subheader(f"Latest: `{out_file.name}`")
 
-        # Read bytes first — avoids PermissionError when file is open in Excel
         try:
             file_bytes = out_file.read_bytes()
             df = pd.read_excel(io.BytesIO(file_bytes))
-            # Replace NaN with empty string for display (NaN appears in optional columns
-            # like Seniority, Employment Type, Description when fetch-details wasn't used)
             df = df.fillna("")
         except PermissionError:
-            st.error(
-                f"**Permission denied** — close `{out_file.name}` in Excel first, then refresh this page."
-            )
+            st.error(f"**Permission denied** — close `{out_file.name}` in Excel first, then refresh.")
             st.stop()
         except Exception as e:
             st.error(f"Could not read file: {e}")
@@ -336,12 +372,8 @@ with tab_results:
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Jobs", len(df))
         col2.metric("Companies", df["Company"].nunique() if "Company" in df.columns else "—")
-        col3.metric(
-            "File size",
-            f"{out_file.stat().st_size / 1024:.1f} KB",
-        )
+        col3.metric("File size", f"{out_file.stat().st_size / 1024:.1f} KB")
 
-        # Make URLs clickable
         if "Job URL" in df.columns:
             df["Job URL"] = df["Job URL"].apply(
                 lambda u: f'<a href="{u}" target="_blank">Link</a>' if pd.notna(u) and u else ""
@@ -364,7 +396,7 @@ with tab_history:
     xlsx_files = sorted(OUTPUT_DIR.glob("linkedin_*.xlsx"), key=lambda f: f.stat().st_mtime, reverse=True)
 
     if not xlsx_files:
-        st.info("No previous scrape files found in `.tmp/`.")
+        st.info("No previous scrape files found.")
     else:
         st.subheader(f"{len(xlsx_files)} scrape file(s) found")
 
