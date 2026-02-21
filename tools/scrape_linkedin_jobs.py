@@ -405,7 +405,14 @@ def main():
     parser.add_argument("--exp-levels", default="", help="Experience level codes e.g. '2,3,4'")
     parser.add_argument("--industries", default="", help="Industry codes e.g. '4,6,96'")
     parser.add_argument("--min-salary", default="", help="Minimum salary code (1–9)")
+    parser.add_argument("--output-dir", default="", help="Override output directory for Excel files")
     args = parser.parse_args()
+
+    # Per-user output directory (passed from app.py when auth is enabled)
+    global OUTPUT_DIR
+    if args.output_dir:
+        OUTPUT_DIR = Path(args.output_dir)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
     print(f"LinkedIn Job Scraper")

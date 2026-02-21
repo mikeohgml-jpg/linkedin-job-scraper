@@ -18,8 +18,6 @@ import streamlit as st
 
 BASE_DIR = Path(__file__).parent
 TOOLS_DIR = BASE_DIR / "tools"
-OUTPUT_DIR = BASE_DIR / ".tmp"
-OUTPUT_DIR.mkdir(exist_ok=True)
 
 PYTHON = sys.executable
 IN_CLOUD = os.environ.get("RUNNING_IN_CLOUD") == "true"
@@ -55,6 +53,14 @@ if GOOGLE_AUTH_ENABLED:
         st.error(f"Access denied. **{st.user.email}** is not authorised to use this app.")
         st.button("Sign out", on_click=st.logout)
         st.stop()
+
+    # Per-user output folder: .tmp/<sanitized_email>/
+    _safe_email = re.sub(r"[^\w]", "_", st.user.email)
+    OUTPUT_DIR = BASE_DIR / ".tmp" / _safe_email
+else:
+    OUTPUT_DIR = BASE_DIR / ".tmp"
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 st.title("🔍 LinkedIn Job Scraper")
 st.caption("Scrape LinkedIn job listings and export to Excel.")
@@ -184,6 +190,8 @@ def build_command() -> list[str]:
         cmd += ["--min-salary", salary_code]
     if headless:
         cmd.append("--headless")
+    # Route output to the user's private folder
+    cmd += ["--output-dir", str(OUTPUT_DIR)]
     return cmd
 
 
