@@ -167,7 +167,7 @@ def build_command() -> list[str]:
 
     if mode == "Single Region":
         cmd = [
-            PYTHON, str(TOOLS_DIR / "scrape_linkedin_jobs.py"),
+            PYTHON, "-u", str(TOOLS_DIR / "scrape_linkedin_jobs.py"),
             "--keyword", keyword,
             "--location", location,
             "--max-pages", str(max_pages),
@@ -176,7 +176,7 @@ def build_command() -> list[str]:
             cmd.append("--fetch-details")
     else:
         cmd = [
-            PYTHON, str(TOOLS_DIR / "scrape_linkedin_multiregion.py"),
+            PYTHON, "-u", str(TOOLS_DIR / "scrape_linkedin_multiregion.py"),
             "--keyword", keyword,
             "--target", str(target),
             "--regions", region,
@@ -235,12 +235,14 @@ with tab_run:
         proc_env = os.environ.copy()
         proc_env["PYTHONIOENCODING"] = "utf-8"
         proc_env["PYTHONUTF8"] = "1"
+        proc_env["PYTHONUNBUFFERED"] = "1"  # flush stdout line-by-line through the pipe
 
         process = subprocess.Popen(
             cmd,
             stdout=PIPE,
             stderr=STDOUT,
             text=True,
+            bufsize=1,          # line-buffered read on our side
             cwd=str(BASE_DIR),
             encoding="utf-8",
             errors="replace",
