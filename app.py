@@ -216,21 +216,36 @@ def read_log() -> str:
         return ""
 
 
-def parse_progress(log_content: str, total_steps: int, scrape_mode: str):
-    """Return (progress_fraction, progress_text) by scanning the log."""
+def parse_progress(log_content: str, total_steps: int, scrape_mode: str, still_running: bool):
+    """Return (progress_fraction, progress_text) by scanning the log.
+    Never returns 1.0 while the process is still alive — avoids premature
+    100% when e.g. a single-page scrape shows 'Page 1/1' early on."""
     pct, text = 0.0, "Running..."
     for line in log_content.splitlines():
+        # Detail-fetch lines: "    [3/25] Job Title @ Company"
+        m_detail = re.search(r"\[(\d+)/(\d+)\]", line)
+        if m_detail:
+            cur, tot = int(m_detail.group(1)), int(m_detail.group(2))
+            if tot > 0:
+                pct = cur / tot
+                text = f"Fetching details {cur} of {tot}..."
+            continue
+        # Page progress: "Page 2/5"
         m = re.search(r"Page\s+(\d+)/(\d+)", line)
         if m:
             cur, tot = int(m.group(1)), int(m.group(2))
-            pct = min(cur / tot, 1.0)
+            pct = cur / max(tot, 1)
             text = f"Scraping page {cur} of {tot}..."
+        # Multi-region total: "Total: 34"
         m2 = re.search(r"Total:\s*(\d+)", line)
         if m2 and scrape_mode != "Single Region":
             cur = int(m2.group(1))
-            pct = min(cur / max(total_steps, 1), 1.0)
+            pct = cur / max(total_steps, 1)
             text = f"Collected {cur} / {total_steps} jobs..."
-    return pct, text
+    # While still running, cap at 0.95 so bar never falsely hits 100%
+    if still_running:
+        pct = min(pct, 0.95)
+    return min(pct, 1.0), text
 
 
 # ── Build command ─────────────────────────────────────────────────────────────
@@ -316,6 +331,7 @@ with tab_run:
             log_content,
             st.session_state.total_steps,
             st.session_state.scrape_mode_s,
+            still_running,
         )
         st.progress(pct, text=prog_text)
         st.code(log_content[-4000:] if log_content else "Starting...", language=None)
