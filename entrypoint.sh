@@ -9,8 +9,9 @@ redirect_uri = "${AUTH_REDIRECT_URI}"
 cookie_secret = "${AUTH_COOKIE_SECRET}"
 
 [auth.google]
-client_id     = "${GOOGLE_CLIENT_ID}"
-client_secret = "${GOOGLE_CLIENT_SECRET}"
+client_id             = "${GOOGLE_CLIENT_ID}"
+client_secret         = "${GOOGLE_CLIENT_SECRET}"
+server_metadata_url   = "https://accounts.google.com/.well-known/openid-configuration"
 EOF
 
 echo "secrets.toml written."
