@@ -283,6 +283,9 @@ def build_command() -> list[str]:
     if salary_code:    cmd += ["--min-salary",   salary_code]
     if headless:       cmd.append("--headless")
     cmd += ["--output-dir", str(OUTPUT_DIR)]
+    # Send notification to the logged-in user's email (falls back to NOTIFY_EMAIL env var)
+    if GOOGLE_AUTH_ENABLED and st.user.is_logged_in:
+        cmd += ["--notify-email", st.user.email]
     return cmd
 
 

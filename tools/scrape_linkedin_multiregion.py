@@ -284,13 +284,16 @@ def main():
     parser.add_argument("--industries", default="", help="Industry codes e.g. '4,6,96'")
     parser.add_argument("--min-salary", default="", help="Minimum salary code (1–9)")
     parser.add_argument("--output-dir", default="", help="Override output directory for Excel files")
+    parser.add_argument("--notify-email", default="", help="Send completion email to this address (overrides NOTIFY_EMAIL env var)")
     args = parser.parse_args()
 
     # Per-user output directory (passed from app.py when auth is enabled)
-    global OUTPUT_DIR
+    global OUTPUT_DIR, NOTIFY_EMAIL
     if args.output_dir:
         OUTPUT_DIR = Path(args.output_dir)
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if args.notify_email:
+        NOTIFY_EMAIL = args.notify_email
 
     locations = REGIONS[args.regions]
 
