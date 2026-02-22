@@ -12,6 +12,7 @@ import os
 import random
 import re
 import smtplib
+import socket
 import sys
 import time
 from datetime import datetime
@@ -63,14 +64,17 @@ def send_completion_email(job_count: int, keyword: str, location: str, filename:
             f"Log in to the app to view and download your results."
         )
         msg.attach(MIMEText(body, "plain"))
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.ehlo()
+        # Resolve to IPv4 explicitly — containers without IPv6 routes get
+        # ENETUNREACH (errno 101) if the default resolution returns an IPv6 addr
+        smtp_ip = socket.getaddrinfo("smtp.gmail.com", 587, socket.AF_INET)[0][4][0]
+        with smtplib.SMTP(smtp_ip, 587, timeout=30) as server:
+            server.ehlo("smtp.gmail.com")
             server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
         print(f"  Email notification sent to {NOTIFY_EMAIL}")
     except Exception as e:
-        print(f"  Email notification failed: {e}")
+        print(f"  Email notification failed ({type(e).__name__}): {e}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
