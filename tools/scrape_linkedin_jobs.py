@@ -11,9 +11,12 @@ import argparse
 import os
 import random
 import re
+import smtplib
 import sys
 import time
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 
 # Force UTF-8 output on Windows (avoids UnicodeEncodeError with special chars in job titles)
@@ -34,6 +37,38 @@ LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD", "")
 
 OUTPUT_DIR = BASE_DIR / ".tmp"
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+SMTP_USER     = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+NOTIFY_EMAIL  = os.getenv("NOTIFY_EMAIL", "")
+
+
+def send_completion_email(job_count: int, keyword: str, location: str, filename: str):
+    """Send a Gmail notification when the scrape finishes.
+    Requires SMTP_USER, SMTP_PASSWORD, NOTIFY_EMAIL env vars."""
+    if not (SMTP_USER and SMTP_PASSWORD and NOTIFY_EMAIL):
+        print("  (Email notification skipped — SMTP_USER / SMTP_PASSWORD / NOTIFY_EMAIL not configured)")
+        return
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"✅ LinkedIn Scrape Done: {job_count} '{keyword}' jobs in {location}"
+        msg["From"]    = SMTP_USER
+        msg["To"]      = NOTIFY_EMAIL
+        body = (
+            f"Your LinkedIn scrape has completed!\n\n"
+            f"  Keyword : {keyword}\n"
+            f"  Location: {location}\n"
+            f"  Jobs    : {job_count}\n"
+            f"  File    : {Path(filename).name}\n\n"
+            f"Log in to the app to view and download your results."
+        )
+        msg.attach(MIMEText(body, "plain"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
+        print(f"  Email notification sent to {NOTIFY_EMAIL}")
+    except Exception as e:
+        print(f"  Email notification failed: {e}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -454,6 +489,7 @@ def main():
 
     output_path = save_to_excel(unique_jobs, args.keyword, args.location)
     print(f"\nSaved to: {output_path}")
+    send_completion_email(len(unique_jobs), args.keyword, args.location, str(output_path))
     print("Done.")
 
 
