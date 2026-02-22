@@ -11,13 +11,9 @@ import argparse
 import os
 import random
 import re
-import smtplib
-import socket
 import sys
 import time
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 # Force UTF-8 output on Windows (avoids UnicodeEncodeError with special chars in job titles)
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -34,21 +30,18 @@ load_dotenv(BASE_DIR / ".env")
 OUTPUT_DIR = BASE_DIR / ".tmp"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-SMTP_USER     = os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-NOTIFY_EMAIL  = os.getenv("NOTIFY_EMAIL", "")
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
+NOTIFY_EMAIL     = os.getenv("NOTIFY_EMAIL", "")
+SMTP_USER        = os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
 
 
 def send_completion_email(job_count: int, keyword: str, region: str, filename: str):
-    """Send a Gmail notification when the scrape finishes."""
-    if not (SMTP_USER and SMTP_PASSWORD and NOTIFY_EMAIL):
-        print("  (Email notification skipped — SMTP_USER / SMTP_PASSWORD / NOTIFY_EMAIL not configured)")
+    """Send email notification via SendGrid HTTP API (works on Railway)."""
+    if not (SENDGRID_API_KEY and NOTIFY_EMAIL and SMTP_USER):
+        print("  (Email notification skipped — SENDGRID_API_KEY / NOTIFY_EMAIL / SMTP_USER not configured)")
         return
+    import urllib.request, json as _json
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"✅ LinkedIn Scrape Done: {job_count} '{keyword}' jobs in {region.upper()}"
-        msg["From"]    = SMTP_USER
-        msg["To"]      = NOTIFY_EMAIL
         body = (
             f"Your LinkedIn scrape has completed!\n\n"
             f"  Keyword : {keyword}\n"
@@ -57,16 +50,26 @@ def send_completion_email(job_count: int, keyword: str, region: str, filename: s
             f"  File    : {Path(filename).name}\n\n"
             f"Log in to the app to view and download your results."
         )
-        msg.attach(MIMEText(body, "plain"))
-        # Resolve to IPv4 explicitly — containers without IPv6 routes get
-        # ENETUNREACH (errno 101) if the default resolution returns an IPv6 addr
-        smtp_ip = socket.getaddrinfo("smtp.gmail.com", 587, socket.AF_INET)[0][4][0]
-        with smtplib.SMTP(smtp_ip, 587, timeout=30) as server:
-            server.ehlo("smtp.gmail.com")
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
-        print(f"  Email notification sent to {NOTIFY_EMAIL}")
+        payload = _json.dumps({
+            "personalizations": [{"to": [{"email": NOTIFY_EMAIL}]}],
+            "from":    {"email": SMTP_USER},
+            "subject": f"LinkedIn Scrape Done: {job_count} '{keyword}' jobs in {region.upper()}",
+            "content": [{"type": "text/plain", "value": body}],
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.sendgrid.com/v3/mail/send",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {SENDGRID_API_KEY}",
+                "Content-Type":  "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status == 202:
+                print(f"  Email notification sent to {NOTIFY_EMAIL}")
+            else:
+                print(f"  Email notification failed: HTTP {resp.status}")
     except Exception as e:
         print(f"  Email notification failed ({type(e).__name__}): {e}")
 
