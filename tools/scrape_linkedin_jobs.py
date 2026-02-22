@@ -38,7 +38,7 @@ LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD", "")
 OUTPUT_DIR = BASE_DIR / ".tmp"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-SMTP_USER     = os.getenv("SMTP_USER", "")
+SMTP_USER     = os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 NOTIFY_EMAIL  = os.getenv("NOTIFY_EMAIL", "")
 
@@ -63,7 +63,9 @@ def send_completion_email(job_count: int, keyword: str, location: str, filename:
             f"Log in to the app to view and download your results."
         )
         msg.attach(MIMEText(body, "plain"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
         print(f"  Email notification sent to {NOTIFY_EMAIL}")
