@@ -242,6 +242,12 @@ def parse_progress(log_content: str, total_steps: int, scrape_mode: str, still_r
             cur = int(m2.group(1))
             pct = cur / max(total_steps, 1)
             text = f"Collected {cur} / {total_steps} jobs..."
+        # Final collection summary: "Collected 57 unique jobs (from 66 total)."
+        m3 = re.search(r"Collected\s+(\d+)\s+unique jobs \(from\s+(\d+)\s+total\)", line)
+        if m3:
+            unique, total = int(m3.group(1)), int(m3.group(2))
+            pct = 0.98
+            text = f"Collected {unique} / {total} unique jobs"
     # While still running, cap at 0.95 so bar never falsely hits 100%
     if still_running:
         pct = min(pct, 0.95)
@@ -287,14 +293,18 @@ def latest_output_file() -> Path | None:
 
 # ── Session state init ────────────────────────────────────────────────────────
 
-if "is_scraping"   not in st.session_state: st.session_state.is_scraping   = False
-if "scrape_pid"    not in st.session_state: st.session_state.scrape_pid    = None
-if "total_steps"   not in st.session_state: st.session_state.total_steps   = 5
-if "scrape_mode_s" not in st.session_state: st.session_state.scrape_mode_s = "Single Region"
+if "is_scraping"       not in st.session_state: st.session_state.is_scraping       = False
+if "scrape_pid"        not in st.session_state: st.session_state.scrape_pid        = None
+if "total_steps"       not in st.session_state: st.session_state.total_steps       = 5
+if "scrape_mode_s"     not in st.session_state: st.session_state.scrape_mode_s     = "Single Region"
+if "scrape_completed"  not in st.session_state: st.session_state.scrape_completed  = False
 
-# Reconcile: process may have finished between page loads
+# Reconcile: process may have finished between page loads.
+# Set a flag so the Run tab can still show the Done! state + download button.
 if st.session_state.is_scraping and not is_process_running(st.session_state.scrape_pid):
     st.session_state.is_scraping = False
+    log_snap = read_log()
+    st.session_state.scrape_completed = "Saved" in log_snap or ".xlsx" in log_snap
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -340,24 +350,32 @@ with tab_run:
             time.sleep(3)
             st.rerun()
         else:
-            # Process just finished
+            # Process just finished — set flag so the display block below shows Done!
             st.session_state.is_scraping = False
             log_content = read_log()
-            if "Saved" in log_content or ".xlsx" in log_content:
-                st.progress(1.0, text="Done!")
-                st.success("Scrape completed! Results are in the **Results** tab.")
-                out_file = latest_output_file()
-                if out_file:
-                    st.download_button(
-                        label="⬇ Download Excel",
-                        data=out_file.read_bytes(),
-                        file_name=out_file.name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary",
-                    )
-            else:
-                st.progress(1.0, text="Failed")
-                st.error("Scraper exited with errors. Check the log above.")
+            st.session_state.scrape_completed = "Saved" in log_content or ".xlsx" in log_content
+            st.rerun()
+
+    # ── Done state (process just finished) ─────────────────────────────────────
+    elif st.session_state.scrape_completed:
+        st.session_state.scrape_completed = False   # clear flag after first render
+        log_content = read_log()
+        _, final_text = parse_progress(log_content, st.session_state.total_steps,
+                                       st.session_state.scrape_mode_s, still_running=False)
+        st.progress(1.0, text=f"Done! — {final_text}")
+        st.success("Scrape completed! Results are in the **Results** tab.")
+        st.code(log_content[-4000:] if log_content else "", language=None)
+        out_file = latest_output_file()
+        if out_file:
+            st.download_button(
+                label="⬇ Download Excel",
+                data=out_file.read_bytes(),
+                file_name=out_file.name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+            )
+        elif log_content:
+            st.error("Scraper exited with errors. Check the log above.")
 
     # ── Idle state ─────────────────────────────────────────────────────────────
     elif not run_btn:
