@@ -361,7 +361,7 @@ with tab_run:
         st.progress(pct, text=prog_text)
         st.code(log_content[-4000:] if log_content else "Starting...", language=None)
 
-        if still_running:
+        if still_running and "Done." not in log_content:
             time.sleep(3)
             st.rerun()
         else:

@@ -462,6 +462,7 @@ def main():
 
     output_path = save_to_excel(unique_jobs, args.keyword, args.location)
     print(f"\nSaved to: {output_path}")
+    print("Done.")
     send_completion_email(
         job_count=len(unique_jobs),
         keyword=args.keyword,
@@ -472,7 +473,6 @@ def main():
         notify_email=NOTIFY_EMAIL,
         from_email=FROM_EMAIL,
     )
-    print("Done.")
 
 
 if __name__ == "__main__":
