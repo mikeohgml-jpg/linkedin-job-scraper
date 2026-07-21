@@ -36,9 +36,9 @@ LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD", "")
 OUTPUT_DIR = BASE_DIR / ".tmp"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-NOTIFY_EMAIL   = os.getenv("NOTIFY_EMAIL", "")
-FROM_EMAIL     = os.getenv("RESEND_FROM_EMAIL") or os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+NOTIFY_EMAIL  = os.getenv("NOTIFY_EMAIL", "")
+FROM_EMAIL    = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -468,7 +468,7 @@ def main():
         scope_label="Location",
         scope_value=args.location,
         filename=str(output_path),
-        api_key=RESEND_API_KEY,
+        api_key=BREVO_API_KEY,
         notify_email=NOTIFY_EMAIL,
         from_email=FROM_EMAIL,
     )

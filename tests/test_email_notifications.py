@@ -1,7 +1,8 @@
 import contextlib
 import importlib.util
 import io
-import smtplib
+import json
+import urllib.error
 from pathlib import Path
 from unittest import TestCase, mock
 
@@ -19,6 +20,22 @@ def load_module():
     return module
 
 
+class FakeResponse:
+    def __init__(self, status):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class FakeHttpError(urllib.error.HTTPError):
+    def __init__(self, url, code, body):
+        super().__init__(url, code, "Bad Request", hdrs=None, fp=io.BytesIO(body.encode("utf-8")))
+
+
 class SendCompletionEmailTests(TestCase):
     def _call(self, module, **overrides):
         defaults = dict(
@@ -27,7 +44,7 @@ class SendCompletionEmailTests(TestCase):
             scope_label="Location",
             scope_value="Singapore",
             filename="C:\\tmp\\linkedin_sales.xlsx",
-            api_key="re_test_key",
+            api_key="brevo_test_key",
             notify_email="user@example.com",
             from_email="noreply@example.com",
         )
@@ -37,41 +54,46 @@ class SendCompletionEmailTests(TestCase):
             module.send_completion_email(**defaults)
         return buffer.getvalue()
 
-    def test_sends_via_resend_smtp(self):
+    def test_posts_brevo_request(self):
         module = load_module()
-        mock_server = mock.MagicMock()
-        mock_smtp_ssl = mock.MagicMock()
-        mock_smtp_ssl.__enter__ = mock.Mock(return_value=mock_server)
-        mock_smtp_ssl.__exit__ = mock.Mock(return_value=False)
+        captured = {}
 
-        with mock.patch("smtplib.SMTP_SSL", return_value=mock_smtp_ssl) as smtp_cls:
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["headers"] = dict(request.header_items())
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return FakeResponse(201)
+
+        with mock.patch.object(module.urllib.request, "urlopen", side_effect=fake_urlopen):
             output = self._call(module)
 
-        smtp_cls.assert_called_once_with("smtp.resend.com", 465, timeout=15)
-        mock_server.login.assert_called_once_with("resend", "re_test_key")
-        mock_server.send_message.assert_called_once()
-        sent_msg = mock_server.send_message.call_args[0][0]
-        self.assertEqual(sent_msg["From"], "noreply@example.com")
-        self.assertEqual(sent_msg["To"], "user@example.com")
-        self.assertIn("Sales", sent_msg["Subject"])
+        self.assertEqual(captured["url"], "https://api.brevo.com/v3/smtp/email")
+        self.assertEqual(captured["headers"]["Api-key"], "brevo_test_key")
+        self.assertEqual(captured["payload"]["sender"]["email"], "noreply@example.com")
+        self.assertEqual(captured["payload"]["to"], [{"email": "user@example.com"}])
+        self.assertIn("Sales", captured["payload"]["subject"])
+        self.assertIn("linkedin_sales.xlsx", captured["payload"]["textContent"])
         self.assertIn("Email notification sent to user@example.com", output)
 
     def test_skips_when_config_missing(self):
         module = load_module()
-        with mock.patch("smtplib.SMTP_SSL") as smtp_cls:
+        with mock.patch.object(module.urllib.request, "urlopen") as urlopen:
             output = self._call(module, api_key="")
-        smtp_cls.assert_not_called()
-        self.assertIn("RESEND_API_KEY / NOTIFY_EMAIL / FROM_EMAIL not configured", output)
+        urlopen.assert_not_called()
+        self.assertIn("BREVO_API_KEY / NOTIFY_EMAIL / FROM_EMAIL not configured", output)
 
-    def test_logs_auth_error(self):
+    def test_logs_http_error_response_body(self):
         module = load_module()
-        mock_server = mock.MagicMock()
-        mock_smtp_ssl = mock.MagicMock()
-        mock_smtp_ssl.__enter__ = mock.Mock(return_value=mock_server)
-        mock_smtp_ssl.__exit__ = mock.Mock(return_value=False)
-        mock_server.login.side_effect = smtplib.SMTPAuthenticationError(535, b"Auth failed")
-
-        with mock.patch("smtplib.SMTP_SSL", return_value=mock_smtp_ssl):
+        with mock.patch.object(
+            module.urllib.request,
+            "urlopen",
+            side_effect=FakeHttpError(
+                "https://api.brevo.com/v3/smtp/email",
+                401,
+                '{"message":"Key not found","code":"unauthorized"}',
+            ),
+        ):
             output = self._call(module)
 
-        self.assertIn("auth error", output)
+        self.assertIn("HTTP Error 401", output)
+        self.assertIn('"code":"unauthorized"', output)

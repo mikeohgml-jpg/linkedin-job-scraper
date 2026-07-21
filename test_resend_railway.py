@@ -1,39 +1,47 @@
 """
-Run this in the Railway console to verify Resend SMTP is working:
+Run this in the Railway console to verify Brevo email is working:
 
     python test_resend_railway.py
 """
+import json
 import os
-import smtplib
-from email.message import EmailMessage
+import urllib.error
+import urllib.request
 
-api_key    = os.getenv("RESEND_API_KEY", "")
-from_email = os.getenv("RESEND_FROM_EMAIL", "")
+api_key    = os.getenv("BREVO_API_KEY", "")
+from_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "")
 to_email   = os.getenv("NOTIFY_EMAIL", "")
 
-print("── Resend SMTP config check ─────────────────")
-print(f"  RESEND_API_KEY   : {'✓ ' + api_key[:10] + '...' if api_key else '✗ MISSING'}")
-print(f"  RESEND_FROM_EMAIL: {from_email or '✗ MISSING'}")
-print(f"  NOTIFY_EMAIL     : {to_email or '✗ MISSING'}")
+print("── Brevo config check ───────────────────────")
+print(f"  BREVO_API_KEY: {'✓ set' if api_key else '✗ MISSING'}")
+print(f"  FROM_EMAIL   : {from_email or '✗ MISSING'}")
+print(f"  NOTIFY_EMAIL : {to_email or '✗ MISSING'}")
 print()
 
 if not (api_key and from_email and to_email):
     print("One or more env vars are missing — fix them in Railway Variables then re-run.")
     raise SystemExit(1)
 
-msg = EmailMessage()
-msg["From"] = from_email
-msg["To"] = to_email
-msg["Subject"] = "Railway ✓ Resend SMTP test"
-msg.set_content("If you got this, Resend SMTP is wired up correctly on Railway.")
+payload = json.dumps({
+    "sender":      {"name": "LinkedIn Scraper", "email": from_email},
+    "to":          [{"email": to_email}],
+    "subject":     "Railway ✓ Brevo test",
+    "textContent": "If you got this, Brevo is wired up correctly on Railway.",
+}).encode("utf-8")
+
+req = urllib.request.Request(
+    "https://api.brevo.com/v3/smtp/email",
+    data=payload,
+    headers={"api-key": api_key, "Content-Type": "application/json"},
+    method="POST",
+)
 
 try:
-    with smtplib.SMTP_SSL("smtp.resend.com", 465, timeout=15) as server:
-        server.login("resend", api_key)
-        server.send_message(msg)
-    print(f"✓ Email sent to {to_email}")
-except smtplib.SMTPAuthenticationError as exc:
-    print(f"✗ Auth error — check RESEND_API_KEY: {exc}")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        print(f"✓ Email sent! HTTP {resp.status}")
+except urllib.error.HTTPError as exc:
+    body = exc.read().decode("utf-8", errors="replace")
+    print(f"✗ HTTP {exc.code}: {body}")
     raise SystemExit(1)
 except Exception as exc:
     print(f"✗ {type(exc).__name__}: {exc}")
