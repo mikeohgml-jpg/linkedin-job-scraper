@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -50,5 +51,13 @@ def send_completion_email(
                 print(f"  Email notification sent to {notify_email}")
             else:
                 print(f"  Email notification failed: HTTP {response.status}")
+    except urllib.error.HTTPError as exc:
+        print(f"  Email notification failed ({type(exc).__name__}): {exc}")
+        try:
+            response_body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            response_body = ""
+        if response_body:
+            print(f"  Resend response: {response_body}")
     except Exception as exc:
         print(f"  Email notification failed ({type(exc).__name__}): {exc}")

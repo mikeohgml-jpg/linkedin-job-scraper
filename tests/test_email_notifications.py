@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import urllib.error
 from unittest import TestCase, mock
 
 
@@ -29,6 +30,11 @@ class FakeResponse:
 
     def __exit__(self, exc_type, exc, tb):
         return False
+
+
+class FakeHttpError(urllib.error.HTTPError):
+    def __init__(self, url, code, body):
+        super().__init__(url, code, "Forbidden", hdrs=None, fp=io.BytesIO(body.encode("utf-8")))
 
 
 class SendCompletionEmailTests(TestCase):
@@ -87,3 +93,32 @@ class SendCompletionEmailTests(TestCase):
 
         urlopen.assert_not_called()
         self.assertIn("RESEND_API_KEY / NOTIFY_EMAIL / FROM_EMAIL not configured", buffer.getvalue())
+
+    def test_logs_http_error_response_body(self):
+        module = load_module()
+
+        with mock.patch.object(
+            module.urllib.request,
+            "urlopen",
+            side_effect=FakeHttpError(
+                "https://api.resend.com/emails",
+                403,
+                '{"message":"API key invalid","name":"validation_error"}',
+            ),
+        ):
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                module.send_completion_email(
+                    job_count=10,
+                    keyword="AI",
+                    scope_label="Region",
+                    scope_value="APAC",
+                    filename="linkedin_ai.xlsx",
+                    api_key="re_test_key",
+                    notify_email="user@example.com",
+                    from_email="noreply@example.com",
+                )
+
+        output = buffer.getvalue()
+        self.assertIn("HTTP Error 403: Forbidden", output)
+        self.assertIn('Resend response: {"message":"API key invalid","name":"validation_error"}', output)
