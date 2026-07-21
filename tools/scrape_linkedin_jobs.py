@@ -215,17 +215,25 @@ def fetch_job_details(page, job: dict) -> dict:
         # Dismiss any sign-in modal that blocks content
         dismiss_signin_modal(page)
 
-        # If redirected to login page, skip this job
-        if "/login" in page.url or "/authwall" in page.url:
-            print(f"    Auth wall — skipping detail fetch for this job.")
+        # Detect auth wall by URL or page content
+        auth_blocked = (
+            "/login" in page.url
+            or "/authwall" in page.url
+            or "/checkpoint" in page.url
+            or page.locator("text=Join to see who").count() > 0
+            or page.locator("text=Sign in to view").count() > 0
+        )
+        if auth_blocked:
+            print(f"    Auth wall detected — skipping: {page.url}")
             return job
 
         # ── Description ───────────────────────────────────────────────
-        # Click "Show more" to expand the full description before reading
+        # Click "Show more" to expand hidden description text
         show_more_selectors = [
             "button.show-more-less-html__button--more",
             "button[data-tracking-control-name='public_jobs_show-more-html-btn']",
             "button:has-text('Show more')",
+            "button:has-text('show more')",
         ]
         for btn_sel in show_more_selectors:
             try:
@@ -243,6 +251,8 @@ def fetch_job_details(page, job: dict) -> dict:
             ".description__text",
             "[class*='description'] .show-more-less-html__markup",
             "section.description div",
+            ".jobs-description__content",
+            ".jobs-description",
         ]
         for sel in desc_selectors:
             try:
@@ -251,9 +261,12 @@ def fetch_job_details(page, job: dict) -> dict:
                     text = el.inner_text(timeout=3000).strip()
                     if text:
                         job["Description"] = text
+                        print(f"    Description: {len(text)} chars via '{sel}'")
                         break
             except Exception:
                 continue
+        else:
+            print(f"    Description: not found (page: {page.url[:80]})")
 
         # ── Seniority & Employment Type ───────────────────────────────
         # Try structured criteria list first
