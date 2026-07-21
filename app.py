@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from build_info import format_build_label, resolve_build_metadata
+from build_info import format_build_badge_html, resolve_build_metadata
 
 BASE_DIR = Path(__file__).parent
 TOOLS_DIR = BASE_DIR / "tools"
@@ -34,6 +34,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+title_col, build_col = st.columns([4, 1.6])
+with title_col:
+    st.title(f"🔍 {APP_TITLE}")
+with build_col:
+    build_badge_html = format_build_badge_html(
+        BUILD_METADATA["version"],
+        BUILD_METADATA["git_sha"],
+        BUILD_METADATA["build_date"],
+    )
+    if build_badge_html:
+        st.markdown(build_badge_html, unsafe_allow_html=True)
+st.caption("Scrape LinkedIn job listings and export to Excel.")
+
 # ── Auth gate ──────────────────────────────────────────────────────────────────
 # Only enforce login when Google OAuth env vars are configured
 GOOGLE_AUTH_ENABLED = bool(os.environ.get("GOOGLE_CLIENT_ID"))
@@ -46,7 +59,6 @@ ALLOWED_EMAILS = {e.strip().lower() for e in _raw_allowed.split(",") if e.strip(
 
 if GOOGLE_AUTH_ENABLED:
     if not st.user.is_logged_in:
-        st.title("🔍 LinkedIn Job Scraper")
         st.info("Sign in with your Google account to continue.")
         st.button("Sign in with Google", on_click=st.login, type="primary")
         st.stop()
@@ -64,22 +76,6 @@ else:
     OUTPUT_DIR = BASE_DIR / ".tmp"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-title_col, build_col = st.columns([4, 1.6])
-with title_col:
-    st.title(f"🔍 {APP_TITLE}")
-with build_col:
-    build_label = format_build_label(
-        BUILD_METADATA["version"],
-        BUILD_METADATA["git_sha"],
-        BUILD_METADATA["build_date"],
-    )
-    if build_label:
-        st.markdown(
-            f"<div style='text-align: right; color: #9ca3af; padding-top: 1rem;'>{build_label}</div>",
-            unsafe_allow_html=True,
-        )
-st.caption("Scrape LinkedIn job listings and export to Excel.")
 
 # ── Sidebar — Controls ────────────────────────────────────────────────────────
 

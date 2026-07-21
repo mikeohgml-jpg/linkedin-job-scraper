@@ -87,3 +87,15 @@ class BuildInfoTests(TestCase):
     def test_omits_missing_parts(self):
         module = load_module()
         self.assertEqual(module.format_build_label("", "d6a4d55", ""), "d6a4d55")
+
+    def test_build_badge_html_escapes_metadata(self):
+        module = load_module()
+
+        badge_html = module.format_build_badge_html(
+            "<b>feature</b>",
+            "abc<123>",
+            "2026-07-21",
+        )
+
+        self.assertIn("&lt;b&gt;feature&lt;/b&gt; | abc&lt;123&gt; | 2026-07-21", badge_html)
+        self.assertNotIn("<b>feature</b>", badge_html)

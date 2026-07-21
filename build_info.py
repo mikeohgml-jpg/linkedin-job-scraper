@@ -1,4 +1,5 @@
 from datetime import datetime
+from html import escape
 
 
 def resolve_build_metadata(env: dict, today_provider=None) -> dict[str, str]:
@@ -21,3 +22,16 @@ def resolve_build_metadata(env: dict, today_provider=None) -> dict[str, str]:
 def format_build_label(version: str, git_sha: str, build_date: str) -> str:
     parts = [part for part in (version, git_sha, build_date) if part]
     return " | ".join(parts)
+
+
+def format_build_badge_html(version: str, git_sha: str, build_date: str) -> str:
+    build_label = format_build_label(version, git_sha, build_date)
+    if not build_label:
+        return ""
+
+    safe_label = escape(build_label)
+    return (
+        "<div style='text-align: right; color: #9ca3af; padding-top: 1rem;'>"
+        f"{safe_label}"
+        "</div>"
+    )
