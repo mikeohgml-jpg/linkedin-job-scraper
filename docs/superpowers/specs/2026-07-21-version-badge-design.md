@@ -65,6 +65,25 @@ Do not change `APP_VERSION` for:
 - docs only
 - deployment-only or infrastructure-only changes
 
+## Version Control Guidance Table
+
+| Change type | Bump rule | Example |
+| --- | --- | --- |
+| User-facing bug fix | Patch | Fixing a broken email notification or correcting a wrong result shown in the UI |
+| Small visible UI improvement | Patch | Adjusting labels, badge placement, progress text, or download messaging |
+| New user-facing feature | Minor | Adding a new filter, a new scrape mode, or a new results capability |
+| User-visible behavior change | Minor | Changing how results are grouped, how auth access works, or how scraping options behave |
+| Internal refactor only | No bump | Extracting helpers, reorganizing modules, or cleaning up code without changing behavior |
+| Tests or docs only | No bump | Adding unit tests or updating README/Copilot instructions |
+| Deployment/config only | No bump | Railway variable changes, Docker tweaks, or secret rotation with no UI/feature impact |
+
+### Decision shortcut
+
+Use this quick rule before release:
+
+- If a user would notice the change in normal usage, bump the version.
+- If the user would not notice it without reading code or logs, do not bump the version.
+
 ## Operational Workflow
 
 1. Deploy code normally.
