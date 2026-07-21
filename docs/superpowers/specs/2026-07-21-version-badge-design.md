@@ -84,6 +84,16 @@ Use this quick rule before release:
 - If a user would notice the change in normal usage, bump the version.
 - If the user would not notice it without reading code or logs, do not bump the version.
 
+### Semantic version examples
+
+| Current version | Release type | Next version | When to use it |
+| --- | --- | --- | --- |
+| `1.2.0` | Patch | `1.2.1` | Visible bug fix or small user-facing polish with no new feature |
+| `1.2.0` | Minor | `1.3.0` | New feature or noticeable behavior change that stays backward-compatible |
+| `1.4.0` | Major | `2.0.0` | Breaking change, major redesign, or a release that changes user expectations materially |
+
+Use standard semantic versioning with three parts: `major.minor.patch`. Avoid formats like `2.00`.
+
 ## Operational Workflow
 
 1. Deploy code normally.
