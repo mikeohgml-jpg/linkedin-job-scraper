@@ -31,7 +31,7 @@ class BuildInfoTests(TestCase):
             {
                 "version": "master",
                 "git_sha": "d6a4d55",
-                "build_date": "2026-07-21",
+                "build_date": "",
             },
         )
 
@@ -82,7 +82,22 @@ class BuildInfoTests(TestCase):
             metadata["build_date"],
         )
 
-        self.assertEqual(label, "master | d6a4d55 | 2026-07-21")
+        self.assertEqual(label, "master | d6a4d55")
+
+    def test_does_not_call_today_provider_without_explicit_build_date(self):
+        module = load_module()
+        today_provider = Mock(return_value="2026-07-21")
+
+        metadata = module.resolve_build_metadata(
+            {
+                "APP_VERSION": "master",
+                "APP_GIT_SHA": "abcdef123456",
+            },
+            today_provider=today_provider,
+        )
+
+        self.assertEqual(metadata["build_date"], "")
+        today_provider.assert_not_called()
 
     def test_omits_missing_parts(self):
         module = load_module()
