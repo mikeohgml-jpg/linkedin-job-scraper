@@ -221,7 +221,22 @@ def fetch_job_details(page, job: dict) -> dict:
             return job
 
         # ── Description ───────────────────────────────────────────────
-        # Try multiple selectors — LinkedIn changes these periodically
+        # Click "Show more" to expand the full description before reading
+        show_more_selectors = [
+            "button.show-more-less-html__button--more",
+            "button[data-tracking-control-name='public_jobs_show-more-html-btn']",
+            "button:has-text('Show more')",
+        ]
+        for btn_sel in show_more_selectors:
+            try:
+                btn = page.locator(btn_sel).first
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click()
+                    human_delay(0.5, 1.0)
+                    break
+            except Exception:
+                continue
+
         desc_selectors = [
             ".show-more-less-html__markup",
             ".description__text--rich",
@@ -235,7 +250,7 @@ def fetch_job_details(page, job: dict) -> dict:
                 if el.count() > 0:
                     text = el.inner_text(timeout=3000).strip()
                     if text:
-                        job["Description"] = text[:3000]
+                        job["Description"] = text
                         break
             except Exception:
                 continue
