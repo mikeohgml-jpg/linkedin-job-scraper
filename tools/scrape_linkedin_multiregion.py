@@ -34,6 +34,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 NOTIFY_EMAIL  = os.getenv("NOTIFY_EMAIL", "")
 FROM_EMAIL    = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
+APP_URL       = os.getenv("APP_URL", "")
 
 REGIONS = {
     "apac": [
@@ -338,6 +339,7 @@ def main():
         api_key=BREVO_API_KEY,
         notify_email=NOTIFY_EMAIL,
         from_email=FROM_EMAIL,
+        app_url=APP_URL,
     )
 
 
