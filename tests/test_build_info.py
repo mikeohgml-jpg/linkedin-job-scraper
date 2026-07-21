@@ -65,6 +65,25 @@ class BuildInfoTests(TestCase):
             "v1.2.0 | d6a4d55 | 2026-07-21",
         )
 
+    def test_formats_branch_fallback_label(self):
+        module = load_module()
+
+        metadata = module.resolve_build_metadata(
+            {
+                "RAILWAY_GIT_BRANCH": "master",
+                "RAILWAY_GIT_COMMIT_SHA": "d6a4d55179f19a2246199053749c0eaa593df96e",
+            },
+            today_provider=Mock(return_value="2026-07-21"),
+        )
+
+        label = module.format_build_label(
+            metadata["version"],
+            metadata["git_sha"],
+            metadata["build_date"],
+        )
+
+        self.assertEqual(label, "master | d6a4d55 | 2026-07-21")
+
     def test_omits_missing_parts(self):
         module = load_module()
         self.assertEqual(module.format_build_label("", "d6a4d55", ""), "d6a4d55")

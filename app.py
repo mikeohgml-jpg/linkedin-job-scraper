@@ -15,12 +15,15 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from build_info import format_build_label, resolve_build_metadata
 
 BASE_DIR = Path(__file__).parent
 TOOLS_DIR = BASE_DIR / "tools"
+APP_TITLE = "LinkedIn Job Scraper"
 
 PYTHON = sys.executable
 IN_CLOUD = os.environ.get("RUNNING_IN_CLOUD") == "true"
+BUILD_METADATA = resolve_build_metadata(os.environ)
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -62,7 +65,20 @@ else:
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-st.title("🔍 LinkedIn Job Scraper")
+title_col, build_col = st.columns([4, 1.6])
+with title_col:
+    st.title(f"🔍 {APP_TITLE}")
+with build_col:
+    build_label = format_build_label(
+        BUILD_METADATA["version"],
+        BUILD_METADATA["git_sha"],
+        BUILD_METADATA["build_date"],
+    )
+    if build_label:
+        st.markdown(
+            f"<div style='text-align: right; color: #9ca3af; padding-top: 1rem;'>{build_label}</div>",
+            unsafe_allow_html=True,
+        )
 st.caption("Scrape LinkedIn job listings and export to Excel.")
 
 # ── Sidebar — Controls ────────────────────────────────────────────────────────
