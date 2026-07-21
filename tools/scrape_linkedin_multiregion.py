@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
+from email_notifications import send_completion_email
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 BASE_DIR = Path(__file__).parent.parent
@@ -30,48 +31,9 @@ load_dotenv(BASE_DIR / ".env")
 OUTPUT_DIR = BASE_DIR / ".tmp"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
-NOTIFY_EMAIL     = os.getenv("NOTIFY_EMAIL", "")
-SMTP_USER        = os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
-
-
-def send_completion_email(job_count: int, keyword: str, region: str, filename: str):
-    """Send email notification via SendGrid HTTP API (works on Railway)."""
-    if not (SENDGRID_API_KEY and NOTIFY_EMAIL and SMTP_USER):
-        print("  (Email notification skipped — SENDGRID_API_KEY / NOTIFY_EMAIL / SMTP_USER not configured)")
-        return
-    import urllib.request, json as _json
-    try:
-        body = (
-            f"Your LinkedIn scrape has completed!\n\n"
-            f"  Keyword : {keyword}\n"
-            f"  Region  : {region.upper()}\n"
-            f"  Jobs    : {job_count}\n"
-            f"  File    : {Path(filename).name}\n\n"
-            f"Log in to the app to view and download your results."
-        )
-        payload = _json.dumps({
-            "personalizations": [{"to": [{"email": NOTIFY_EMAIL}]}],
-            "from":    {"email": SMTP_USER},
-            "subject": f"LinkedIn Scrape Done: {job_count} '{keyword}' jobs in {region.upper()}",
-            "content": [{"type": "text/plain", "value": body}],
-        }).encode()
-        req = urllib.request.Request(
-            "https://api.sendgrid.com/v3/mail/send",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {SENDGRID_API_KEY}",
-                "Content-Type":  "application/json",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            if resp.status == 202:
-                print(f"  Email notification sent to {NOTIFY_EMAIL}")
-            else:
-                print(f"  Email notification failed: HTTP {resp.status}")
-    except Exception as e:
-        print(f"  Email notification failed ({type(e).__name__}): {e}")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+NOTIFY_EMAIL   = os.getenv("NOTIFY_EMAIL", "")
+FROM_EMAIL     = os.getenv("RESEND_FROM_EMAIL") or os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL", "")
 
 REGIONS = {
     "apac": [
@@ -366,7 +328,16 @@ def main():
 
     print(f"\nCollected {len(final_jobs)} unique jobs.")
     print(f"Saved to: {output_path}")
-    send_completion_email(len(final_jobs), args.keyword, args.regions, str(output_path))
+    send_completion_email(
+        job_count=len(final_jobs),
+        keyword=args.keyword,
+        scope_label="Region",
+        scope_value=args.regions.upper(),
+        filename=str(output_path),
+        api_key=RESEND_API_KEY,
+        notify_email=NOTIFY_EMAIL,
+        from_email=FROM_EMAIL,
+    )
     print("Done.")
 
 
