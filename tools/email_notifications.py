@@ -1,7 +1,9 @@
-import json
-import urllib.error
-import urllib.request
+import smtplib
+from email.message import EmailMessage
 from pathlib import Path
+
+RESEND_SMTP_HOST = "smtp.resend.com"
+RESEND_SMTP_PORT = 465
 
 
 def send_completion_email(
@@ -14,7 +16,7 @@ def send_completion_email(
     notify_email: str,
     from_email: str,
 ):
-    """Send a completion email through Resend's HTTP API."""
+    """Send a completion email through Resend's SMTP relay."""
     if not (api_key and notify_email and from_email):
         print("  (Email notification skipped — RESEND_API_KEY / NOTIFY_EMAIL / FROM_EMAIL not configured)")
         return
@@ -27,37 +29,19 @@ def send_completion_email(
         f"  File    : {Path(filename).name}\n\n"
         f"Log in to the app to view and download your results."
     )
-    payload = json.dumps(
-        {
-            "from": from_email,
-            "to": [notify_email],
-            "subject": f"LinkedIn Scrape Done: {job_count} '{keyword}' jobs in {scope_value}",
-            "text": body,
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        "https://api.resend.com/emails",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+
+    msg = EmailMessage()
+    msg["From"] = from_email
+    msg["To"] = notify_email
+    msg["Subject"] = f"LinkedIn Scrape Done: {job_count} '{keyword}' jobs in {scope_value}"
+    msg.set_content(body)
 
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            if response.status in (200, 201, 202):
-                print(f"  Email notification sent to {notify_email}")
-            else:
-                print(f"  Email notification failed: HTTP {response.status}")
-    except urllib.error.HTTPError as exc:
-        print(f"  Email notification failed ({type(exc).__name__}): {exc}")
-        try:
-            response_body = exc.read().decode("utf-8", errors="replace")
-        except Exception:
-            response_body = ""
-        if response_body:
-            print(f"  Resend response: {response_body}")
+        with smtplib.SMTP_SSL(RESEND_SMTP_HOST, RESEND_SMTP_PORT, timeout=15) as server:
+            server.login("resend", api_key)
+            server.send_message(msg)
+        print(f"  Email notification sent to {notify_email}")
+    except smtplib.SMTPAuthenticationError as exc:
+        print(f"  Email notification failed (auth error): {exc}")
     except Exception as exc:
         print(f"  Email notification failed ({type(exc).__name__}): {exc}")

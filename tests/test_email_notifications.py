@@ -1,9 +1,8 @@
 import contextlib
 import importlib.util
 import io
-import json
+import smtplib
 from pathlib import Path
-import urllib.error
 from unittest import TestCase, mock
 
 
@@ -13,7 +12,6 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "tools" / "email_notificatio
 def load_module():
     if not MODULE_PATH.exists():
         raise AssertionError(f"Missing module: {MODULE_PATH}")
-
     spec = importlib.util.spec_from_file_location("email_notifications", MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -21,104 +19,59 @@ def load_module():
     return module
 
 
-class FakeResponse:
-    def __init__(self, status):
-        self.status = status
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-class FakeHttpError(urllib.error.HTTPError):
-    def __init__(self, url, code, body):
-        super().__init__(url, code, "Forbidden", hdrs=None, fp=io.BytesIO(body.encode("utf-8")))
-
-
 class SendCompletionEmailTests(TestCase):
-    def test_posts_resend_request(self):
+    def _call(self, module, **overrides):
+        defaults = dict(
+            job_count=40,
+            keyword="Sales",
+            scope_label="Location",
+            scope_value="Singapore",
+            filename="C:\\tmp\\linkedin_sales.xlsx",
+            api_key="re_test_key",
+            notify_email="user@example.com",
+            from_email="noreply@example.com",
+        )
+        defaults.update(overrides)
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            module.send_completion_email(**defaults)
+        return buffer.getvalue()
+
+    def test_sends_via_resend_smtp(self):
         module = load_module()
-        captured = {}
+        mock_server = mock.MagicMock()
+        mock_smtp_ssl = mock.MagicMock()
+        mock_smtp_ssl.__enter__ = mock.Mock(return_value=mock_server)
+        mock_smtp_ssl.__exit__ = mock.Mock(return_value=False)
 
-        def fake_urlopen(request, timeout):
-            captured["url"] = request.full_url
-            captured["timeout"] = timeout
-            captured["headers"] = dict(request.header_items())
-            captured["payload"] = json.loads(request.data.decode("utf-8"))
-            return FakeResponse(200)
+        with mock.patch("smtplib.SMTP_SSL", return_value=mock_smtp_ssl) as smtp_cls:
+            output = self._call(module)
 
-        with mock.patch.object(module.urllib.request, "urlopen", side_effect=fake_urlopen):
-            buffer = io.StringIO()
-            with contextlib.redirect_stdout(buffer):
-                module.send_completion_email(
-                    job_count=40,
-                    keyword="Sales",
-                    scope_label="Location",
-                    scope_value="Singapore",
-                    filename="C:\\tmp\\linkedin_sales.xlsx",
-                    api_key="re_test_key",
-                    notify_email="user@example.com",
-                    from_email="noreply@example.com",
-                )
-
-        self.assertEqual(captured["url"], "https://api.resend.com/emails")
-        self.assertEqual(captured["timeout"], 15)
-        self.assertEqual(captured["headers"]["Authorization"], "Bearer re_test_key")
-        self.assertEqual(captured["payload"]["from"], "noreply@example.com")
-        self.assertEqual(captured["payload"]["to"], ["user@example.com"])
-        self.assertEqual(captured["payload"]["subject"], "LinkedIn Scrape Done: 40 'Sales' jobs in Singapore")
-        self.assertIn("Keyword : Sales", captured["payload"]["text"])
-        self.assertIn("Location: Singapore", captured["payload"]["text"])
-        self.assertIn("linkedin_sales.xlsx", captured["payload"]["text"])
-        self.assertIn("Email notification sent to user@example.com", buffer.getvalue())
+        smtp_cls.assert_called_once_with("smtp.resend.com", 465, timeout=15)
+        mock_server.login.assert_called_once_with("resend", "re_test_key")
+        mock_server.send_message.assert_called_once()
+        sent_msg = mock_server.send_message.call_args[0][0]
+        self.assertEqual(sent_msg["From"], "noreply@example.com")
+        self.assertEqual(sent_msg["To"], "user@example.com")
+        self.assertIn("Sales", sent_msg["Subject"])
+        self.assertIn("Email notification sent to user@example.com", output)
 
     def test_skips_when_config_missing(self):
         module = load_module()
+        with mock.patch("smtplib.SMTP_SSL") as smtp_cls:
+            output = self._call(module, api_key="")
+        smtp_cls.assert_not_called()
+        self.assertIn("RESEND_API_KEY / NOTIFY_EMAIL / FROM_EMAIL not configured", output)
 
-        with mock.patch.object(module.urllib.request, "urlopen") as urlopen:
-            buffer = io.StringIO()
-            with contextlib.redirect_stdout(buffer):
-                module.send_completion_email(
-                    job_count=10,
-                    keyword="AI",
-                    scope_label="Region",
-                    scope_value="APAC",
-                    filename="linkedin_ai.xlsx",
-                    api_key="",
-                    notify_email="user@example.com",
-                    from_email="noreply@example.com",
-                )
-
-        urlopen.assert_not_called()
-        self.assertIn("RESEND_API_KEY / NOTIFY_EMAIL / FROM_EMAIL not configured", buffer.getvalue())
-
-    def test_logs_http_error_response_body(self):
+    def test_logs_auth_error(self):
         module = load_module()
+        mock_server = mock.MagicMock()
+        mock_smtp_ssl = mock.MagicMock()
+        mock_smtp_ssl.__enter__ = mock.Mock(return_value=mock_server)
+        mock_smtp_ssl.__exit__ = mock.Mock(return_value=False)
+        mock_server.login.side_effect = smtplib.SMTPAuthenticationError(535, b"Auth failed")
 
-        with mock.patch.object(
-            module.urllib.request,
-            "urlopen",
-            side_effect=FakeHttpError(
-                "https://api.resend.com/emails",
-                403,
-                '{"message":"API key invalid","name":"validation_error"}',
-            ),
-        ):
-            buffer = io.StringIO()
-            with contextlib.redirect_stdout(buffer):
-                module.send_completion_email(
-                    job_count=10,
-                    keyword="AI",
-                    scope_label="Region",
-                    scope_value="APAC",
-                    filename="linkedin_ai.xlsx",
-                    api_key="re_test_key",
-                    notify_email="user@example.com",
-                    from_email="noreply@example.com",
-                )
+        with mock.patch("smtplib.SMTP_SSL", return_value=mock_smtp_ssl):
+            output = self._call(module)
 
-        output = buffer.getvalue()
-        self.assertIn("HTTP Error 403: Forbidden", output)
-        self.assertIn('Resend response: {"message":"API key invalid","name":"validation_error"}', output)
+        self.assertIn("auth error", output)
