@@ -110,7 +110,7 @@ with st.sidebar:
         selected_countries = st.multiselect(
             "Countries",
             ALL_COUNTRIES,
-            default=SEA_DEFAULT,
+            default=[],
             help="Select one or more countries to scrape",
         )
         target = st.number_input("Target jobs", min_value=10, max_value=500, value=50, step=10)
