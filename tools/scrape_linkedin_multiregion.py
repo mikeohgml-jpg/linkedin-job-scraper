@@ -343,6 +343,7 @@ def main():
     parser.add_argument("--output-dir", default="", help="Override output directory for Excel files")
     parser.add_argument("--notify-email", default="", help="Send completion email to this address (overrides NOTIFY_EMAIL env var)")
     parser.add_argument("--fetch-details", action="store_true", help="Visit each job page to fetch description, seniority, and employment type")
+    parser.add_argument("--locations", default="", help="Comma-separated country list, e.g. 'Singapore,Japan' (overrides --regions)")
     args = parser.parse_args()
 
     # Per-user output directory (passed from app.py when auth is enabled)
@@ -353,15 +354,18 @@ def main():
     if args.notify_email:
         NOTIFY_EMAIL = args.notify_email
 
-    locations = REGIONS[args.regions]
+    if args.locations:
+        locations = [c.strip() for c in args.locations.split(",") if c.strip()]
+    else:
+        locations = REGIONS[args.regions]
     # Distribute target evenly so every country is always scraped
     per_country = -(-args.target // len(locations))  # ceiling division
 
     print("=" * 60)
     print(f"LinkedIn Multi-Region Job Scraper")
-    print(f"  Keyword : {args.keyword}")
-    print(f"  Region  : {args.regions} ({len(locations)} locations)")
-    print(f"  Target  : {args.target} unique jobs (~{per_country} per country)")
+    print(f"  Keyword   : {args.keyword}")
+    print(f"  Countries : {', '.join(locations)}")
+    print(f"  Target    : {args.target} unique jobs (~{per_country} per country)")
     if args.exp_levels:   print(f"  Exp levels: {args.exp_levels}")
     if args.industries:   print(f"  Industries: {args.industries}")
     if args.min_salary:   print(f"  Min salary: {args.min_salary}")

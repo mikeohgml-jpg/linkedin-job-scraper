@@ -89,19 +89,30 @@ with st.sidebar:
 
     mode = st.radio(
         "Scrape mode",
-        ["Single Region", "Multi-Region (APAC / SEA)"],
+        ["Single Region", "Multi-Region"],
         index=0,
     )
 
     keyword = st.text_input("Keyword", value="Sales", placeholder="e.g. Sales, AI, Data Engineer")
+
+    ALL_COUNTRIES = [
+        "Australia", "China", "Hong Kong", "India", "Indonesia",
+        "Japan", "Malaysia", "Myanmar", "New Zealand", "Philippines",
+        "Singapore", "South Korea", "Thailand", "Vietnam",
+    ]
+    SEA_DEFAULT = ["Singapore", "Malaysia", "Philippines", "Indonesia", "Thailand", "Vietnam", "Myanmar"]
 
     if mode == "Single Region":
         location = st.text_input("Location", value="Singapore", placeholder="e.g. Singapore, Tokyo")
         max_pages = st.slider("Max pages", min_value=1, max_value=20, value=5,
                               help="25 jobs per page (~58 unique without login)")
     else:
-        region = st.selectbox("Region", ["apac", "sea"],
-                              format_func=lambda r: {"apac": "Asia-Pacific (12 countries)", "sea": "Southeast Asia (7 countries)"}[r])
+        selected_countries = st.multiselect(
+            "Countries",
+            ALL_COUNTRIES,
+            default=SEA_DEFAULT,
+            help="Select one or more countries to scrape",
+        )
         target = st.number_input("Target jobs", min_value=10, max_value=500, value=50, step=10)
 
     st.divider()
@@ -287,7 +298,7 @@ def build_command() -> list[str]:
             PYTHON, "-u", str(TOOLS_DIR / "scrape_linkedin_multiregion.py"),
             "--keyword", keyword,
             "--target", str(target),
-            "--regions", region,
+            "--locations", ",".join(selected_countries),
         ]
         if fetch_details:
             cmd.append("--fetch-details")
@@ -335,6 +346,8 @@ with tab_run:
     if run_btn and not st.session_state.is_scraping:
         if not keyword.strip():
             st.warning("Enter a keyword before running.")
+        elif mode == "Multi-Region" and not selected_countries:
+            st.warning("Select at least one country before running.")
         else:
             cmd = build_command()
             st.session_state.scrape_pid    = launch_scraper(cmd)
