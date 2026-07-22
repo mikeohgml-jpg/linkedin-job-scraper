@@ -259,12 +259,14 @@ def main():
         NOTIFY_EMAIL = args.notify_email
 
     locations = REGIONS[args.regions]
+    # Distribute target evenly so every country is always scraped
+    per_country = -(-args.target // len(locations))  # ceiling division
 
     print("=" * 60)
     print(f"LinkedIn Multi-Region Job Scraper")
     print(f"  Keyword : {args.keyword}")
     print(f"  Region  : {args.regions} ({len(locations)} locations)")
-    print(f"  Target  : {args.target} unique jobs")
+    print(f"  Target  : {args.target} unique jobs (~{per_country} per country)")
     if args.exp_levels:  print(f"  Exp levels: {args.exp_levels}")
     if args.industries:  print(f"  Industries: {args.industries}")
     if args.min_salary:  print(f"  Min salary: {args.min_salary}")
@@ -296,13 +298,8 @@ def main():
         page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         for loc in locations:
-            remaining = args.target - len(all_jobs)
-            if remaining <= 0:
-                print(f"\nTarget of {args.target} reached — stopping.")
-                break
-
-            print(f"\n--- {loc} (need {remaining} more) ---")
-            raw_jobs = scrape_location(page, args.keyword, loc, remaining,
+            print(f"\n--- {loc} (quota: {per_country} | total so far: {len(all_jobs)}) ---")
+            raw_jobs = scrape_location(page, args.keyword, loc, per_country,
                                        args.exp_levels, args.industries, args.min_salary)
 
             # Deduplicate globally by URL
