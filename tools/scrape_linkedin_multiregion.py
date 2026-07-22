@@ -97,6 +97,99 @@ def dismiss_signin_modal(page):
         pass
 
 
+def fetch_job_details(page, job: dict) -> dict:
+    """Visit individual job page to get seniority, type, and description."""
+    if not job.get("Job URL"):
+        return job
+
+    try:
+        page.goto(job["Job URL"], wait_until="domcontentloaded", timeout=15000)
+        human_delay(1.5, 3)
+
+        dismiss_signin_modal(page)
+
+        auth_blocked = (
+            "/login" in page.url
+            or "/authwall" in page.url
+            or "/checkpoint" in page.url
+            or page.locator("text=Join to see who").count() > 0
+            or page.locator("text=Sign in to view").count() > 0
+        )
+        if auth_blocked:
+            print(f"    Auth wall detected — skipping: {page.url}")
+            return job
+
+        # Click "Show more" to expand hidden description text
+        show_more_selectors = [
+            "button.show-more-less-html__button--more",
+            "button[data-tracking-control-name='public_jobs_show-more-html-btn']",
+            "button:has-text('Show more')",
+            "button:has-text('show more')",
+        ]
+        for btn_sel in show_more_selectors:
+            try:
+                btn = page.locator(btn_sel).first
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click()
+                    human_delay(0.5, 1.0)
+                    break
+            except Exception:
+                continue
+
+        desc_selectors = [
+            ".show-more-less-html__markup",
+            ".description__text--rich",
+            ".description__text",
+            "[class*='description'] .show-more-less-html__markup",
+            "section.description div",
+            ".jobs-description__content",
+            ".jobs-description",
+        ]
+        for sel in desc_selectors:
+            try:
+                el = page.locator(sel).first
+                if el.count() > 0:
+                    text = el.inner_text(timeout=3000).strip()
+                    if text:
+                        job["Description"] = text
+                        print(f"    Description: {len(text)} chars via '{sel}'")
+                        break
+            except Exception:
+                continue
+        else:
+            print(f"    Description: not found (page: {page.url[:80]})")
+
+        criteria_selectors = [
+            ".description__job-criteria-item",
+            ".job-criteria__item",
+            "li.description__job-criteria-item",
+        ]
+        for criteria_sel in criteria_selectors:
+            try:
+                criteria = page.locator(criteria_sel).all()
+                if not criteria:
+                    continue
+                for item in criteria:
+                    try:
+                        label = item.locator("h3, .description__job-criteria-subheader").first.inner_text(timeout=1000).strip().lower()
+                        value = item.locator("span, .description__job-criteria-text").first.inner_text(timeout=1000).strip()
+                        if "seniority" in label:
+                            job["Seniority"] = value
+                        elif "employment" in label:
+                            job["Employment Type"] = value
+                    except Exception:
+                        continue
+                if job["Seniority"] or job["Employment Type"]:
+                    break
+            except Exception:
+                continue
+
+    except PlaywrightTimeoutError:
+        print(f"    Timeout fetching: {job['Job URL']}")
+
+    return job
+
+
 def extract_jobs_from_page(page, location: str) -> list[dict]:
     jobs = []
     try:
@@ -160,6 +253,7 @@ def extract_jobs_from_page(page, location: str) -> list[dict]:
                 "Search Region": location,
                 "Seniority": "",
                 "Employment Type": "",
+                "Description": "",
             })
 
     return jobs
@@ -218,7 +312,7 @@ def save_to_excel(jobs: list[dict], keyword: str, region: str, target: int) -> P
 
     df = pd.DataFrame(jobs, columns=[
         "Job Title", "Company", "Location", "Posted",
-        "Job URL", "Search Region", "Seniority", "Employment Type",
+        "Job URL", "Search Region", "Seniority", "Employment Type", "Description",
     ])
     df = df.fillna("")  # replace NaN with blank so Excel shows empty cells, not "NaN"
 
@@ -228,7 +322,7 @@ def save_to_excel(jobs: list[dict], keyword: str, region: str, target: int) -> P
 
         col_widths = {
             "A": 40, "B": 30, "C": 25, "D": 15,
-            "E": 55, "F": 18, "G": 20, "H": 20,
+            "E": 55, "F": 18, "G": 20, "H": 20, "I": 80,
         }
         for col, width in col_widths.items():
             ws.column_dimensions[col].width = width
@@ -248,6 +342,7 @@ def main():
     parser.add_argument("--min-salary", default="", help="Minimum salary code (1–9)")
     parser.add_argument("--output-dir", default="", help="Override output directory for Excel files")
     parser.add_argument("--notify-email", default="", help="Send completion email to this address (overrides NOTIFY_EMAIL env var)")
+    parser.add_argument("--fetch-details", action="store_true", help="Visit each job page to fetch description, seniority, and employment type")
     args = parser.parse_args()
 
     # Per-user output directory (passed from app.py when auth is enabled)
@@ -267,9 +362,10 @@ def main():
     print(f"  Keyword : {args.keyword}")
     print(f"  Region  : {args.regions} ({len(locations)} locations)")
     print(f"  Target  : {args.target} unique jobs (~{per_country} per country)")
-    if args.exp_levels:  print(f"  Exp levels: {args.exp_levels}")
-    if args.industries:  print(f"  Industries: {args.industries}")
-    if args.min_salary:  print(f"  Min salary: {args.min_salary}")
+    if args.exp_levels:   print(f"  Exp levels: {args.exp_levels}")
+    if args.industries:   print(f"  Industries: {args.industries}")
+    if args.min_salary:   print(f"  Min salary: {args.min_salary}")
+    if args.fetch_details: print(f"  Fetch details: ON")
     print("=" * 60)
 
     all_jobs: list[dict] = []
@@ -313,6 +409,20 @@ def main():
 
             print(f"  +{new_count} new unique jobs | Total: {len(all_jobs)}")
             human_delay(2, 4)
+
+        # Fetch full descriptions while browser is still open
+        if args.fetch_details and all_jobs:
+            jobs_to_fetch = all_jobs[:args.target]
+            print(f"\n{'='*60}")
+            print(f"Fetching full details for {len(jobs_to_fetch)} jobs...")
+            print(f"{'='*60}")
+            for i, job in enumerate(jobs_to_fetch):
+                print(f"  [{i+1}/{len(jobs_to_fetch)}] {job['Job Title']} @ {job['Company']}")
+                jobs_to_fetch[i] = fetch_job_details(page, job)
+                human_delay(5, 12)
+                if (i + 1) % 5 == 0:
+                    human_delay(8, 15)
+            all_jobs[:len(jobs_to_fetch)] = jobs_to_fetch
 
         browser.close()
 

@@ -289,6 +289,8 @@ def build_command() -> list[str]:
             "--target", str(target),
             "--regions", region,
         ]
+        if fetch_details:
+            cmd.append("--fetch-details")
 
     if exp_codes:      cmd += ["--exp-levels",  exp_codes]
     if industry_codes: cmd += ["--industries",   industry_codes]
